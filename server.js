@@ -5,65 +5,99 @@ const data = require("./data-service");
 const bodyParser = require("body-parser");
 const fs = require("fs");
 const multer = require("multer");
-
-dotenv.config();
+const exphbs = require("express-handlebars");
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+dotenv.config();
 
-// multer requires a few options to be setup to store files with file extensions
-// by default it won't store extensions for security reasons
+// set HTTP_PORT
+const HTTP_PORT = process.env.PORT || 8080;
+
+// configure Handlebars
+app.engine(
+  ".hbs",
+  exphbs.engine({
+    extname: ".hbs",
+    defaultLayout: "main",
+    helpers: {
+      navLink: function (url, options) {
+        const activeRoute = this.activeRoute || "";
+
+        // Normalize both URLs by removing trailing slashes for comparison
+        const normalizedUrl = url.replace(/\/$/, "");
+        const normalizedActiveRoute = activeRoute.replace(/\/$/, "");
+
+        const isActive = normalizedUrl === normalizedActiveRoute;
+        const activeClass = isActive
+          ? ' class="nav-link active" aria-current="page"'
+          : ' class="nav-link"';
+
+        return `<li class="nav-item"><a href="${url}"${activeClass}>${options.fn(this)}</a></li>`;
+      },
+      equal: function (lvalue, rvalue) {
+        return lvalue == rvalue;
+      },
+    },
+  }),
+);
+
+app.set("view engine", ".hbs");
+
+// multer configuration
 const storage = multer.diskStorage({
   destination: "./public/images/uploaded",
   filename: function (req, file, cb) {
-    // we write the filename as the current date down to the millisecond
-    // in a large web service this would possibly cause a problem if two people
-    // uploaded an image at the exact same time. A better way would be to use GUID's for filenames.
-    // this is a simple example.
     cb(null, Date.now() + path.extname(file.originalname));
   },
 });
 
-// tell multer to use the diskStorage function for naming files instead of the default.
+// tells multer to use disk storage function
 const upload = multer({ storage: storage });
 
-// Static assets
+// set static folder
 app.use(express.static(path.join(__dirname, "public")));
 
 // body-parser configuration
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Home route
+// middleware to set active route
+app.use((req, res, next) => {
+  res.locals.activeRoute = req.path;
+  next();
+});
+
+// index route
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "views", "index.html"));
+  res.render("home");
 });
 
-// About route
+// about route
 app.get("/about", (req, res) => {
-  res.sendFile(path.join(__dirname, "views", "about.html"));
+  res.render("about");
 });
 
-// Project route
-app.get("/project", (req, res) => {
-  res.sendFile(path.join(__dirname, "views", "project.html"));
-});
+/* -----------------------------
+   Images routes starts here
+------------------------------ */
 
 // add image route
 app.get("/images/add", (req, res) => {
-  res.sendFile(path.join(__dirname, "views", "addImage.html"));
-});
-
-// add employee route
-app.get("/employees/add", (req, res) => {
-  res.sendFile(path.join(__dirname, "views", "addEmployee.html"));
+  res.render("addImage");
 });
 
 // to get the image names as array (image route)
 app.get("/images", (req, res) => {
-  fs.readdir("./public/images/uploaded", function (err, items) {
-    res.json({ images: items });
-  });
+  try {
+    const items = fs.readdirSync("./public/images/uploaded");
+    res.render("images", { images: items });
+  } catch (err) {
+    res.render("images", { message: "no results" });
+  }
 });
+
+/* -----------------------------
+   Employees routes starts here
+------------------------------ */
 
 // employees routes (with queries)
 app.get("/employees", (req, res) => {
@@ -71,82 +105,234 @@ app.get("/employees", (req, res) => {
     data
       .getEmployeesByStatus(req.query.status)
       .then((data) => {
-        res.json(data);
+        // Check if data array has items
+        if (data.length > 0) {
+          res.render("employees", { employees: data });
+        } else {
+          res.render("employees", { message: "no results" });
+        }
       })
       .catch((err) => {
-        res.json({ message: "no results" });
+        res.render("employees", { message: "no results" });
       });
   } else if (req.query.department) {
     data
       .getEmployeesByDepartment(req.query.department)
       .then((data) => {
-        res.json(data);
+        // Check if data array has items
+        if (data.length > 0) {
+          res.render("employees", { employees: data });
+        } else {
+          res.render("employees", { message: "no results" });
+        }
       })
       .catch((err) => {
-        res.json({ message: "no results" });
+        res.render("employees", { message: "no results" });
       });
   } else if (req.query.manager) {
     data
       .getEmployeesByManager(req.query.manager)
       .then((data) => {
-        res.json(data);
+        // Check if data array has items
+        if (data.length > 0) {
+          res.render("employees", { employees: data });
+        } else {
+          res.render("employees", { message: "no results" });
+        }
       })
       .catch((err) => {
-        res.json({ message: "no results" });
+        res.render("employees", { message: "no results" });
       });
   } else {
     data
       .getAllEmployees()
       .then((data) => {
-        res.json(data);
+        // Check if data array has items
+        if (data.length > 0) {
+          res.render("employees", { employees: data });
+        } else {
+          res.render("employees", { message: "no results" });
+        }
       })
       .catch((err) => {
-        res.json({ message: "no results" });
+        res.render("employees", { message: "no results" });
       });
   }
 });
 
-// /employee/value route
-app.get("/employee/:empNum", (req, res) => {
+// addEmployee route (inside employees.hbs)
+app.get("/employees/add", (req, res) => {
+  // Try to get departments from database
   data
-    .getEmployeeByNum(req.params.empNum)
-    .then((data) => {
-      res.json(data);
+    .getDepartments()
+    .then((departments) => {
+      // Success - render with departments data
+      res.render("addEmployee", {
+        departments: departments,
+        layout: "main",
+      });
     })
     .catch((err) => {
-      res.json({ message: err });
+      // Error or no departments - render with empty array
+      console.log("Could not load departments:", err);
+      res.render("addEmployee", {
+        departments: [],
+        layout: "main",
+      });
     });
 });
 
-// managers route
-app.get("/managers", (req, res) => {
+// get a single employee with a value
+app.get("/employee/:empNum", (req, res) => {
+  // Get employee data first
   data
-    .getManagers()
-    .then((data) => {
-      res.json(data);
+    .getEmployeeByNum(req.params.empNum)
+    .then((employeeData) => {
+      // Then get all departments
+      return data
+        .getDepartments()
+        .then((departmentsData) => {
+          // Pass both to the template
+          res.render("employee", {
+            employee: employeeData,
+            departments: departmentsData,
+          });
+        })
+        .catch((err) => {
+          // If departments fail, still show employee but with empty departments
+          console.log("Could not load departments:", err);
+          res.render("employee", {
+            employee: employeeData,
+            departments: [],
+          });
+        });
     })
     .catch((err) => {
-      res.json({message: err});
+      console.log("Employee not found:", err);
+      res.render("employee", { message: "no results" });
     });
 });
+
+// Delete employee route
+app.get("/employees/delete/:empNum", (req, res) => {
+  data
+    .deleteEmployeeByNum(req.params.empNum)
+    .then(() => {
+      res.redirect("/employees");
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send("Unable to Remove Employee / Employee not found");
+    });
+});
+
+/* -----------------------------
+   Departments routes starts here
+------------------------------ */
 
 // departments route
 app.get("/departments", (req, res) => {
   data
     .getDepartments()
     .then((data) => {
-      res.json(data);
+      // Check if data array has items
+      if (data.length > 0) {
+        res.render("departments", { departments: data });
+      } else {
+        res.render("departments", { message: "no results" });
+      }
     })
     .catch((err) => {
-      res.json({ message: "no results" });
+      res.render("departments", { message: "no results" });
     });
 });
 
+// addDepartment route (inside departments.hbs)
+app.get("/departments/add", (req, res) => {
+  res.render("addDepartment");
+});
+
+// department by ID route
+app.get("/department/:departmentId", (req, res) => {
+  data
+    .getDepartmentById(req.params.departmentId)
+    .then((data) => {
+      if (data === undefined) {
+        res.status(404).send("Department Not Found");
+      } else {
+        res.render("department", { department: data });
+      }
+    })
+    .catch((err) => {
+      res.status(404).send("Department Not Found");
+    });
+});
+
+// delete department route
+app.get("/departments/delete/:departmentId", (req, res) => {
+  data
+    .deleteDepartmentById(req.params.departmentId)
+    .then(() => {
+      res.redirect("/departments");
+    })
+    .catch((err) => {
+      res
+        .status(500)
+        .send("Unable to Remove Department / Department not found");
+    });
+});
+
+/* -----------------------------
+   POST routes starts here
+------------------------------ */
+
 // form data (employee data) upload POST method
 app.post("/employees/add", (req, res) => {
-  data.addEmployee(req.body).then(() => {
-    res.redirect("/employees");
-  });
+  data
+    .addEmployee(req.body)
+    .then(() => {
+      res.redirect("/employees");
+    })
+    .catch((err) => {
+      res.json({ message: "coulden't create employee!!" });
+    });
+});
+
+// Update employee route (POST)
+app.post("/employee/update", (req, res) => {
+  data
+    .updateEmployee(req.body)
+    .then(() => {
+      res.redirect("/employees");
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send("Unable to Update Employee");
+    });
+});
+
+// add department POST route
+app.post("/departments/add", (req, res) => {
+  data
+    .addDepartment(req.body)
+    .then(() => {
+      res.redirect("/departments");
+    })
+    .catch((err) => {
+      res.json({ message: "couldn't create department!!" });
+    });
+});
+
+// update department POST route
+app.post("/department/update", (req, res) => {
+  data
+    .updateDepartment(req.body)
+    .then(() => {
+      res.redirect("/departments");
+    })
+    .catch((err) => {
+      res.status(500).send("Unable to Update Department");
+    });
 });
 
 // image upload POST method
@@ -156,17 +342,17 @@ app.post("/images/add", upload.single("imageFile"), (req, res) => {
 
 // 404 error handler for undefined routes
 app.use((req, res) => {
-  res.status(404).sendFile(path.join(__dirname, "views", "404.html"));
+  res.status(404).render("404");
 });
 
-
 // setup server
-data.initialize()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+data
+  .initialize()
+  .then(function () {
+    app.listen(HTTP_PORT, function () {
+      console.log(`App listening on port: ${HTTP_PORT}`);
     });
   })
-  .catch((err) => {
-    console.log("Unable to start server: " + err);
+  .catch(function (err) {
+    console.log(`Unable to start server: ${err}`);
   });
